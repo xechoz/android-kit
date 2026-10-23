@@ -1,0 +1,36 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Icon from '@/components/Icon.astro';
+import { localizedHref } from '@/lib/routing';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const copy = t(lang);
+---
+
+<BaseLayout
+  lang={lang}
+  title={copy.notFound.title}
+  description={copy.notFound.body}
+  noindex
+  hideLanguage
+>
+  <section class="wrap flex min-h-[62vh] flex-col justify-center py-20">
+    <p class="label">404 / NOT FOUND</p>
+    <div class="display mt-2 text-[clamp(6rem,20vw,15rem)] leading-none text-accent">404</div>
+    <div class="mt-6 grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+      <div>
+        <h1 class="display text-[clamp(2rem,4vw,3.2rem)]">{copy.notFound.title}</h1>
+        <p class="mt-2 text-[15px] text-muted">{copy.notFound.body}</p>
+      </div>
+      <a class="btn btn--primary" href={localizedHref('/', lang)}>
+        {copy.notFound.cta}
+        <Icon name="arrow-right" size={13} />
+      </a>
+    </div>
+  </section>
+</BaseLayout>

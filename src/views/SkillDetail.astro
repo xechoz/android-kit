@@ -1,0 +1,131 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import CopyButton from '@/components/CopyButton.astro';
+import Icon from '@/components/Icon.astro';
+import { getSkill } from '@/lib/skills';
+import { getComponent } from '@/data/registry';
+import { renderMarkdown } from '@/lib/markdown';
+import { localizedHref } from '@/lib/routing';
+import { site } from '@/lib/site';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+  slug: string;
+}
+
+const { lang, slug } = Astro.props;
+const copy = t(lang);
+const skill = getSkill(slug);
+
+if (!skill) {
+  throw new Error(`Unknown skill: ${slug}`);
+}
+
+const body = skill.body.replace(/^\s*#\s+.+\r?\n+/, '');
+const html = await renderMarkdown(body);
+const component = getComponent(skill.slug);
+const displayName =
+  skill.slug === 'android-kit' ? 'xechoz/android-kit' : (component?.name ?? skill.name);
+const rawHref = localizedHref(`/skills/${skill.slug}/SKILL.md`, lang);
+const source = skill.metadata.source ?? `${site.repo}/blob/main/skills/${skill.slug}/SKILL.md`;
+const meta = [
+  skill.metadata.artifact && { label: copy.common.artifact, value: skill.metadata.artifact },
+  skill.metadata.version && { label: copy.common.version, value: skill.metadata.version },
+  skill.metadata.minSdk && { label: copy.common.minSdk, value: skill.metadata.minSdk },
+  component && { label: copy.common.license, value: component.license },
+  skill.metadata.license && { label: copy.common.license, value: skill.metadata.license },
+].filter((item): item is { label: string; value: string } => Boolean(item));
+---
+
+<BaseLayout
+  lang={lang}
+  title={`${displayName} skill`}
+  description={skill.description}
+  image="/og/default.png"
+>
+  <section class="border-b border-line">
+    <div class="wrap py-12 md:py-16">
+      <a
+        class="mono inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-muted transition-colors hover:text-ink"
+        href={localizedHref('/skills/', lang)}
+      >
+        <Icon name="arrow-right" size={12} class="rotate-180" />
+        {copy.skills.back}
+      </a>
+
+      <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_300px]">
+        <div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="part-no">SKILL.md</span>
+            <span class="tag">{skill.slug}</span>
+          </div>
+          <h1 class="display mt-5 text-[clamp(2.8rem,6vw,5rem)]">{displayName}</h1>
+          <p class="mt-4 max-w-3xl text-[15px] leading-relaxed text-muted">{skill.description}</p>
+
+          <div class="mt-7 flex flex-wrap gap-3">
+            <a class="btn btn--ghost btn--sm" href={rawHref} download>
+              {copy.skills.downloadRaw}
+              <Icon name="download" size={12} />
+            </a>
+            <a class="btn btn--ghost btn--sm" href={source} target="_blank" rel="noreferrer noopener">
+              {copy.skills.source}
+              <Icon name="github" size={12} />
+            </a>
+          </div>
+        </div>
+
+        <aside class="border border-line bg-surface p-5">
+          <p class="label">{copy.skills.installTitle}</p>
+          <code class="mono mt-2 block text-[10.5px] leading-relaxed text-ink">{site.skillsInstall}</code>
+          <div class="mt-3">
+            <CopyButton
+              value={site.skillsInstall}
+              label={copy.components.detail.copyCommand}
+              copiedLabel={copy.common.copied}
+              variant="light"
+            />
+          </div>
+          <p class="mt-3 border-t border-line pt-3 text-[11.5px] leading-relaxed text-muted">
+            {copy.skills.cliNote}
+          </p>
+        </aside>
+      </div>
+
+      {
+        meta.length > 0 && (
+          <div class="mt-10 flex flex-wrap border border-line">
+            {meta.map((item) => (
+              <div class="min-w-[45%] flex-1 border-r border-line px-4 py-3 last:border-r-0">
+                <div class="label">{item.label}</div>
+                <div class="mono mt-1.5 break-all text-[10.5px] text-ink">{item.value}</div>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    </div>
+  </section>
+
+  <div class="wrap py-12 md:py-16">
+    <div class="prose mx-auto max-w-3xl">
+      <p class="not-prose mb-8 border border-line bg-surface px-4 py-3 font-mono text-[10px] uppercase tracking-[0.06em] text-muted">
+        {copy.skills.englishOnly}
+      </p>
+      <div set:html={html} />
+    </div>
+  </div>
+
+  <section class="border-t border-line">
+    <div class="wrap flex flex-wrap items-center justify-between gap-4 py-8">
+      <a class="btn btn--ghost btn--sm" href={localizedHref('/skills/', lang)}>
+        {copy.skills.back}
+        <Icon name="arrow-right" size={12} />
+      </a>
+      <a class="btn btn--ghost btn--sm" href={localizedHref('/builder/', lang)}>
+        {copy.home.builderCta}
+        <Icon name="code" size={12} />
+      </a>
+    </div>
+  </section>
+</BaseLayout>

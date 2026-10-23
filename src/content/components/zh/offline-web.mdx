@@ -1,0 +1,168 @@
+---
+locale: zh
+title: Offline Web
+---
+
+Offline Web 面向 Android WebView：服务端把一个站点打包成**签名的离线包**，客户端下载、校验、解压后，通过 `WebViewClient.shouldInterceptRequest` 把请求透明映射到本地文件。业务代码只需要多写一行 `initOfflineResource(...)`。
+
+它解决的是「WebView 页面在弱网/离线时打不开」的问题，不是简单的 HTTP 缓存。离线包有签名、版本、过期时间、回退和撤销语义。
+
+> 当前**没有发布到 Maven Central**，只能从源码接入。仓库里同时包含 Android core、Compose demo 和一个 Node.js 示例服务端。
+
+## 仓库结构
+
+```text
+core/          可发布的 Android 库（Kotlin，minSdk 21）
+demo-android/  Compose demo APK
+server/        Node.js 示例服务端：抓取/上传、签名、发布、管理页
+fixtures/      Kotlin 与 Node 共用的协议契约向量
+```
+
+## 源码接入
+
+先在仓库根目录发布到本地 Maven：
+
+```bash
+./gradlew :core:publishToMavenLocal
+```
+
+宿主工程：
+
+```kotlin
+repositories {
+    mavenLocal()
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("io.github.xechoz:offline-web-core:0.1.0")
+}
+```
+
+也可以把 `:core` 作为 composite build 或源码模块引入。它依赖 OkHttp、kotlinx-serialization 和 Kotlin Coroutines。
+
+## 初始化
+
+在 `Application.onCreate` 调用一次：
+
+```kotlin
+OfflineWeb.init(
+    context = this,
+    config = OfflineConfig(
+        appKey = "demo",
+        endpoint = "https://cdn.example.com/offline/",
+        trustedKeys = mapOf(
+            "prod-2026-01" to "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...",
+        ),
+        clientVersion = 1,
+        maxStorageBytes = 200L * 1024 * 1024,
+        networkPolicy = NetworkPolicy.ANY,
+        expiryPolicy = ExpiryPolicy.STRICT,
+        verifyOnStartup = StartupVerification.SIZE_ONLY,
+        allowCleartext = false,
+    ),
+)
+```
+
+`trustedKeys` 的 value 是 **SPKI DER 公钥的 Base64**，不是 PEM 文本。可以配置多个 keyId 做密钥轮换。
+
+`OfflineConfig` 是全局一份，按 `appKey` 隔离存储。`endpoint` 必须是 http(s) URL；使用 http 时必须显式 `allowCleartext = true`，只建议本地 demo 这么做。
+
+## 绑定 WebView
+
+```kotlin
+val binding = webView.initOfflineResource(
+    resource = OfflineResource(
+        packageId = "shop",
+        missingResource = MissingResourcePolicy.NETWORK,
+    ),
+    delegateClient = existingWebViewClient, // 可选；业务 client 优先
+)
+
+webView.loadUrl("https://cdn.example.com/shop/")
+```
+
+- `delegateClient` 返回非 null 时直接使用业务响应，离线逻辑不介入。
+- `binding.state` 是 `StateFlow<ResourceState>`：`NOT_INSTALLED` / `ACTIVE` / `EXPIRED` / `REVOKED` / `INVALID`。
+- 页面销毁时调用 `binding.close()` 或 `webView.clearOfflineResource()`，恢复原 `WebViewClient`。
+- 库不修改 JS、DOM Storage、混合内容等设置，由业务决定。
+
+## 管理离线包
+
+```kotlin
+val manager = OfflineWeb.manager
+
+manager.installed         // StateFlow<List<InstalledPackage>>
+manager.events            // SharedFlow<OfflineEvent>
+manager.storageUsageBytes // 本地占用
+
+suspend fun update(packageId: String? = null): UpdateResult
+suspend fun remove(packageId: String)
+suspend fun clear()
+suspend fun availablePackages(): List<RemotePackage>
+fun resolve(url: String, isMainFrame: Boolean = false): ResolveResult
+```
+
+典型流程：`availablePackages()` 拉取服务端列表 → `update(packageId)` 下载并安装 → 页面打开时通过 binding 读取状态 → 失败时根据 `OfflineError` 决定重试或回退网络。
+
+## 策略
+
+| 配置 | 取值 | 默认 |
+| --- | --- | --- |
+| `NetworkPolicy` | `ANY` / `UNMETERED` / `NOT_ROAMING` | `ANY` |
+| `ExpiryPolicy` | `STRICT` / `GRACEFUL` | `STRICT` |
+| `StartupVerification` | `NONE` / `SIZE_ONLY` / `FULL` | `SIZE_ONLY` |
+| `MissingResourcePolicy` | `NETWORK` / `ERROR` | `NETWORK` |
+
+`STRICT` 下过期包立即停止服务并回退网络；`GRACEFUL` 会在更新检查期间继续服务过期包。`FULL` 启动校验会重新校验所有包，启动更慢但更安全。
+
+## 服务端
+
+```bash
+cd server
+npm install
+npm start
+```
+
+默认地址与凭据：
+
+- 客户端 API：`http://127.0.0.1:8080/api/v1/...`
+- 管理页：`http://127.0.0.1:8080/admin`
+- 管理 token：`demo-admin`（可用 `ADMIN_TOKEN` 覆盖）
+- 演示站点：`http://127.0.0.1:8080/site/`
+- 首次启动会把 `sample-web/` 发布为 `shop` v1
+
+模拟器访问宿主机用 `10.0.2.2`：
+
+```kotlin
+OfflineConfig(
+    appKey = "demo",
+    endpoint = "http://10.0.2.2:8080/",
+    allowCleartext = true, // 仅本地 demo
+    ...
+)
+```
+
+## 常见坑
+
+- **以为 Maven Central 上有**：没有。必须 `publishToMavenLocal()` 或源码引入。
+- **`trustedKeys` 传了 PEM**：要传 SPKI DER 的 Base64。密钥不匹配会得到 `UnknownKey` 或 `Signature` 错误。
+- **http endpoint 没开 `allowCleartext`**：`OfflineWeb.init` 直接抛异常。
+- **`packageId` 与服务端不一致**：页面不会命中离线包，状态停在 `NOT_INSTALLED`。
+- **忘记 `close()`**：WebView 复用时旧的 binding 可能仍然生效。`initOfflineResource` 会关闭同一个 WebView 的旧 binding，但页面销毁时仍建议显式关闭。
+- **期望它接管所有请求**：只处理 GET + http(s)，只读取清单内文件；POST、WebSocket、清单外资源都不会命中。
+- **没有网络权限**：别忘 `INTERNET`。
+- **把 demo 的 cleartext 配置带进生产**：生产必须 https + 正确公钥。
+
+## 验证
+
+1. 启动 server，安装 demo，点击「下载安装」，状态变为 `ACTIVE`。
+2. 停掉 server，重新打开 WebView，页面仍然显示。
+3. 在飞行模式下杀进程重启，页面仍然可用。
+4. 上传一个签名不匹配的包，确认被拒绝。
+5. 发布一个过期包，确认按 `ExpiryPolicy` 回退。
+
+## 许可证
+
+Apache-2.0。源码：[xechoz/offline-web](https://github.com/xechoz/offline-web)。

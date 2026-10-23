@@ -1,0 +1,193 @@
+---
+locale: zh
+title: ServiceCenter
+---
+
+ServiceCenter 是一个 KMP 服务注册与发现库。它用 `@Service` 注解 + KSP 生成注册表，运行时核心操作只有 `setService` / `getService`，注册表本身不使用反射。
+
+JVM / Android 通过生成的 `META-INF/services` 资源自动发现注册对象；JS / Wasm / Native 没有可靠的自动发现机制，需要显式 `install(...)`。
+
+> 仓库当前没有 LICENSE 文件。用于商业或开源项目前，先向作者确认授权。
+
+## Android / JVM 工程
+
+```kotlin
+plugins {
+    alias(libs.plugins.ksp)
+}
+
+dependencies {
+    implementation("io.github.xechoz:service-center:0.0.1")
+    ksp("io.github.xechoz:service-center-compiler:0.0.1")
+}
+```
+
+## KMP 工程
+
+KSP 代码生成进入 `commonMain`，所有平台共享同一份注册代码：
+
+```kotlin
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.ksp)
+}
+
+kotlin {
+    sourceSets {
+        commonMain {
+            kotlin.srcDir("build/generated/ksp/metadata/commonMain/kotlin")
+            resources.srcDir("build/generated/ksp/metadata/commonMain/resources")
+
+            dependencies {
+                implementation("io.github.xechoz:service-center:0.0.1")
+            }
+        }
+    }
+}
+
+dependencies {
+    add("kspCommonMainMetadata", "io.github.xechoz:service-center-compiler:0.0.1")
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
+    if (name != "kspCommonMainKotlinMetadata") {
+        dependsOn("kspCommonMainKotlinMetadata")
+    }
+}
+
+tasks.matching { it.name.startsWith("ksp") && it.name != "kspCommonMainKotlinMetadata" }.configureEach {
+    dependsOn("kspCommonMainKotlinMetadata")
+}
+
+tasks.withType<org.gradle.language.jvm.tasks.ProcessResources>().configureEach {
+    dependsOn("kspCommonMainKotlinMetadata")
+}
+
+tasks.matching { it.name.endsWith("JavaRes") }.configureEach {
+    dependsOn("kspCommonMainKotlinMetadata")
+}
+```
+
+可选的 KSP 参数：
+
+```kotlin
+ksp {
+    arg("serviceCenter.generatedPackage", "com.example.generated")
+    arg("serviceCenter.generatedName", "ServiceCenterGenerated")
+}
+```
+
+默认生成 `me.xechoz.servicecenter.generated.ServiceCenterGenerated`。
+
+## 声明服务
+
+```kotlin
+import me.xechoz.servicecenter.IService
+import me.xechoz.servicecenter.Service
+
+interface Greeter : IService {
+    fun greet(): String
+}
+
+@Service
+class GreeterImpl : Greeter {
+    override fun greet(): String = "Hello from ServiceCenter"
+}
+```
+
+规则：
+
+- `@Service` 类必须实现 `IService` 的一个子接口（不能只实现 `IService` 本身）。
+- 一个 `@Service` 类最多实现一个 `IService` 子接口。
+- 类必须是具体类或 `object`，不能是 abstract / sealed / inner。
+- 类必须有可访问的无参构造；构造参数都有默认值也可以。
+- 同一个服务接口只能绑定一个实现，重复绑定会在 KSP 阶段报错。
+
+注册键是那个**直接父接口**：
+
+```kotlin
+val greeter = ServiceCenter.getService<Greeter>()
+```
+
+## 初始化
+
+JVM / Android 调用一次：
+
+```kotlin
+ServiceCenter.initialize()
+```
+
+它会发现 classpath 上所有模块生成的注册对象，可重复调用。之后：
+
+```kotlin
+val greeter = ServiceCenter.getService<Greeter>()
+```
+
+JS / Wasm / Native 显式安装生成的注册类：
+
+```kotlin
+ServiceCenter.install(AppGenerated(), DataGenerated())
+```
+
+生成的类名默认是 `me.xechoz.servicecenter.generated.ServiceCenterGenerated`；可以通过 KSP 参数改成每个模块独立的类名。
+
+## API
+
+```kotlin
+object ServiceCenter {
+    fun initialize()
+    fun install(vararg registrars: ServiceRegistrar)
+
+    fun <T : Any> setService(type: KClass<T>, factory: () -> T)
+    inline fun <reified T : Any> setService(noinline factory: () -> T)
+
+    fun <T : Any> getService(type: KClass<T>): T
+    inline fun <reified T : Any> getService(): T
+
+    fun <T : Any> getServiceOrNull(type: KClass<T>): T?
+    inline fun <reified T : Any> getServiceOrNull(): T?
+
+    fun reset()
+}
+```
+
+`getService` 在缺失时抛 `ServiceNotFoundException`（消息里带已注册类型列表）；不想处理异常时用 `getServiceOrNull`。
+
+## 行为约定
+
+| 项目 | 行为 |
+| --- | --- |
+| 生命周期 | 懒加载单例，首次 `getService` 创建并缓存 |
+| 自动发现 | JVM / Android 解析生成的 `META-INF/services`；其他平台 no-op |
+| 重复注册 | 两个 registrar 绑定同一类型抛 `DuplicateServiceException`；同一 registrar 重复安装幂等 |
+| 触发时机 | 不会自动初始化，必须显式 `initialize()` / `install(...)` |
+| 测试 | `ServiceCenter.reset()` 清空注册表、已安装 registrar 和初始化标记 |
+| 线程安全 | atomicfu 写时复制；单例创建使用 `lazy(SYNCHRONIZED)` |
+
+## 常见坑
+
+- **只实现 `IService`**：KSP 会报错。必须再定义一个子接口，例如 `interface Greeter : IService`。
+- **多个子接口**：一个 `@Service` 类最多绑定一个 `IService` 子接口。
+- **没有可访问的无参构造**：KSP 拒绝生成。构造参数全部有默认值也可以。
+- **KMP 忘记 `kspCommonMainMetadata` 接线**：生成代码和 `META-INF/services` 资源不会进入 commonMain。
+- **忘记调用 `initialize()`**：`getService` 不会自动触发发现。
+- **多模块重复绑定**：同一个接口只能有一个实现；拆分模块时注意 registr 的边界。
+- **在测试里复用全局状态**：用 `ServiceCenter.reset()`，不要依赖执行顺序。
+- **许可证未声明**：仓库没有 LICENSE 文件，接入前确认授权。
+
+## 验证
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+检查：
+
+1. 调用 `ServiceCenter.initialize()`。
+2. `getService<Greeter>()` 返回实现类，而不是抛 `ServiceNotFoundException`。
+3. 把实现类从模块里移除，确认编译或运行期错误符合预期。
+
+## 许可证
+
+**仓库当前没有 LICENSE 文件。** 源码：[xechoz/ServiceCenter](https://github.com/xechoz/ServiceCenter)。在明确授权前，不要假设它可以用于商业项目。

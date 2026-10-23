@@ -1,0 +1,168 @@
+---
+locale: en
+title: Offline Web
+---
+
+Offline Web is an Android WebView library for **signed offline web bundles**. A server packages a site; the client downloads, verifies, and extracts it, then maps requests to local files through `WebViewClient.shouldInterceptRequest`. Host code adds one `initOfflineResource(...)` call.
+
+It solves "the WebView page will not open offline or on a bad network". It is not a plain HTTP cache: bundles are signed and carry version, expiry, rollback, and revocation semantics.
+
+> It is **not published to Maven Central** and must be consumed from source. The repository contains the Android core, a Compose demo, and a Node.js reference server.
+
+## Repository layout
+
+```text
+core/          Publishable Android library (Kotlin, minSdk 21)
+demo-android/  Compose demo APK
+server/        Node.js server: fetch/upload, sign, publish, admin page
+fixtures/      Shared protocol contract vectors for Kotlin and Node
+```
+
+## Consume from source
+
+Publish to the local Maven repository:
+
+```bash
+./gradlew :core:publishToMavenLocal
+```
+
+Host project:
+
+```kotlin
+repositories {
+    mavenLocal()
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("io.github.xechoz:offline-web-core:0.1.0")
+}
+```
+
+You can also include `:core` as a composite build or a source module. It depends on OkHttp, kotlinx-serialization, and Kotlin Coroutines.
+
+## Initialize
+
+Call once from `Application.onCreate`:
+
+```kotlin
+OfflineWeb.init(
+    context = this,
+    config = OfflineConfig(
+        appKey = "demo",
+        endpoint = "https://cdn.example.com/offline/",
+        trustedKeys = mapOf(
+            "prod-2026-01" to "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...",
+        ),
+        clientVersion = 1,
+        maxStorageBytes = 200L * 1024 * 1024,
+        networkPolicy = NetworkPolicy.ANY,
+        expiryPolicy = ExpiryPolicy.STRICT,
+        verifyOnStartup = StartupVerification.SIZE_ONLY,
+        allowCleartext = false,
+    ),
+)
+```
+
+`trustedKeys` values are **Base64 of the SPKI DER public key**, not PEM text. Multiple key IDs allow rotation.
+
+`OfflineConfig` is global and storage is isolated by `appKey`. `endpoint` must be an http(s) URL; using http requires `allowCleartext = true`, which is only appropriate for a local demo.
+
+## Bind a WebView
+
+```kotlin
+val binding = webView.initOfflineResource(
+    resource = OfflineResource(
+        packageId = "shop",
+        missingResource = MissingResourcePolicy.NETWORK,
+    ),
+    delegateClient = existingWebViewClient, // optional; the business client wins
+)
+
+webView.loadUrl("https://cdn.example.com/shop/")
+```
+
+- If `delegateClient` returns non-null, its response is used and offline logic is bypassed.
+- `binding.state` is a `StateFlow<ResourceState>`: `NOT_INSTALLED` / `ACTIVE` / `EXPIRED` / `REVOKED` / `INVALID`.
+- Call `binding.close()` or `webView.clearOfflineResource()` when the page is destroyed to restore the previous `WebViewClient`.
+- The library does not change JS, DOM Storage, or mixed-content settings. That is up to the host.
+
+## Manage bundles
+
+```kotlin
+val manager = OfflineWeb.manager
+
+manager.installed         // StateFlow<List<InstalledPackage>>
+manager.events            // SharedFlow<OfflineEvent>
+manager.storageUsageBytes // local usage
+
+suspend fun update(packageId: String? = null): UpdateResult
+suspend fun remove(packageId: String)
+suspend fun clear()
+suspend fun availablePackages(): List<RemotePackage>
+fun resolve(url: String, isMainFrame: Boolean = false): ResolveResult
+```
+
+A typical flow: `availablePackages()` → `update(packageId)` → read `binding.state` when the page opens → inspect `OfflineError` and decide whether to retry or fall back to the network.
+
+## Policies
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `NetworkPolicy` | `ANY` / `UNMETERED` / `NOT_ROAMING` | `ANY` |
+| `ExpiryPolicy` | `STRICT` / `GRACEFUL` | `STRICT` |
+| `StartupVerification` | `NONE` / `SIZE_ONLY` / `FULL` | `SIZE_ONLY` |
+| `MissingResourcePolicy` | `NETWORK` / `ERROR` | `NETWORK` |
+
+`STRICT` stops serving an expired bundle and falls back to the network. `GRACEFUL` keeps serving it while updates are checked. `FULL` re-verifies every bundle at startup: slower, but stricter.
+
+## Server
+
+```bash
+cd server
+npm install
+npm start
+```
+
+Defaults:
+
+- Client API: `http://127.0.0.1:8080/api/v1/...`
+- Admin: `http://127.0.0.1:8080/admin`
+- Admin token: `demo-admin` (`ADMIN_TOKEN` overrides)
+- Demo site: `http://127.0.0.1:8080/site/`
+- First launch publishes `sample-web/` as `shop` v1
+
+From the emulator, use `10.0.2.2` for the host:
+
+```kotlin
+OfflineConfig(
+    appKey = "demo",
+    endpoint = "http://10.0.2.2:8080/",
+    allowCleartext = true, // local demo only
+    ...
+)
+```
+
+## Pitfalls
+
+- **Expecting a Maven Central artifact**: there is none. Run `publishToMavenLocal()` or consume the source.
+- **Passing PEM to `trustedKeys`**: it wants Base64 SPKI DER. A mismatch yields `UnknownKey` or `Signature`.
+- **HTTP endpoint without `allowCleartext`**: `OfflineWeb.init` throws.
+- **`packageId` mismatch**: the page misses the bundle and stays `NOT_INSTALLED`.
+- **Skipping `close()`**: reusing a WebView can leave an old binding in place. `initOfflineResource` closes the previous binding for the same WebView, but still close explicitly on destroy.
+- **Expecting it to intercept everything**: only GET + http(s) and only files in the manifest. POST, WebSockets, and out-of-manifest resources are not served offline.
+- **Missing `INTERNET` permission**.
+- **Shipping demo cleartext settings**: production must use https and the correct public key.
+
+## Verify
+
+1. Start the server, install the demo, tap "download and install", and confirm `ACTIVE`.
+2. Stop the server and reopen the WebView; the page still renders.
+3. Enable airplane mode, kill and relaunch; the page still renders.
+4. Upload a bundle with a bad signature and confirm it is rejected.
+5. Publish an expired bundle and confirm the `ExpiryPolicy` behavior.
+
+## License
+
+Apache-2.0. Source: [xechoz/offline-web](https://github.com/xechoz/offline-web).

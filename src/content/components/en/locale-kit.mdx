@@ -1,0 +1,190 @@
+---
+locale: en
+title: LocaleKit
+---
+
+LocaleKit does two jobs: **switch the app's own language** and **read the system language or open its settings**. It uses the official `AppCompatDelegate` per-app language API. It does not modify the system language and does not need Shizuku or root.
+
+## When to use it
+
+- You want an in-app picker such as "Follow system / English / 简体中文".
+- You want your app to appear in Android 13+ system app-language settings and stay in sync with the in-app choice.
+- You need to read the system language or open the system language settings.
+- You need to open another app's language settings on Android 13+.
+
+If all you need is `Locale.getDefault()`, you do not need this library.
+
+## Install
+
+```kotlin
+dependencies {
+    implementation("io.github.xechoz:locale:1.0.0")
+}
+```
+
+Version catalog:
+
+```toml
+[versions]
+localeKit = "1.0.0"
+
+[libraries]
+locale-kit = { module = "io.github.xechoz:locale", version.ref = "localeKit" }
+```
+
+```kotlin
+dependencies {
+    implementation(libs.locale.kit)
+}
+```
+
+The library depends only on `appcompat`. minSdk is 24; `compileSdk` follows the host project.
+
+## Declare supported locales
+
+`app/src/main/res/xml/locales_config.xml`:
+
+```xml
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="zh-CN" />
+    <locale android:name="en" />
+</locale-config>
+```
+
+Reference it from the `<application>` tag:
+
+```xml
+<application
+    android:localeConfig="@xml/locales_config"
+    ...>
+```
+
+Without `localeConfig`, `AppLanguage.available()` returns an empty list and Android 13+ system settings will not list your app.
+
+## Host Activity requirement
+
+The host Activity must extend `AppCompatActivity`:
+
+```kotlin
+class MainActivity : AppCompatActivity()
+```
+
+This is a requirement of the official `AppCompatDelegate` API. Compose projects can keep using `AppCompatActivity` with `setContent`.
+
+The library manifest merges an `AppLocalesMetadataHolderService` (`autoStoreLocales=true`) that persists the choice on Android 12 and below. **No init call is required.**
+
+## API
+
+```kotlin
+sealed interface AppLanguagePreference {
+    data object FollowSystem : AppLanguagePreference
+    data class Explicit(val locale: Locale) : AppLanguagePreference
+}
+
+object AppLanguage {
+    fun current(): AppLanguagePreference
+    fun set(preference: AppLanguagePreference)      // main thread
+    fun available(context: Context): List<LanguageOption>
+}
+
+object SystemLanguage {
+    fun current(context: Context): List<Locale>      // first is primary
+    fun displayName(locale: Locale): String
+    fun openSettings(context: Context): Boolean
+}
+
+object AppLocaleSettings {
+    val isSupported: Boolean                         // Android 13+
+    fun open(context: Context, packageName: String): Boolean
+}
+
+object CommonLocales {
+    val all: List<Locale>
+}
+```
+
+`LanguageOption` is `data class LanguageOption(val locale: Locale, val label: String)`. The label is already rendered in the current app language.
+
+## Compose example
+
+```kotlin
+@Composable
+fun LanguagePicker() {
+    val context = LocalContext.current
+    val options = remember { AppLanguage.available(context) }
+
+    Column(Modifier.padding(16.dp)) {
+        options.forEach { option ->
+            TextButton(
+                onClick = {
+                    AppLanguage.set(AppLanguagePreference.Explicit(option.locale))
+                },
+            ) {
+                Text(option.label)
+            }
+        }
+        TextButton(
+            onClick = { AppLanguage.set(AppLanguagePreference.FollowSystem) },
+        ) {
+            Text("Follow system")
+        }
+    }
+}
+```
+
+`set()` triggers an Activity recreation (explicitly on Android 12 and below; handled by the system app-language mechanism on 13+). Call it on the main thread only.
+
+## View example
+
+```kotlin
+val english = Button(this).apply {
+    text = "English"
+    setOnClickListener {
+        AppLanguage.set(AppLanguagePreference.Explicit(Locale.ENGLISH))
+    }
+}
+
+val followSystem = Button(this).apply {
+    text = "Follow system"
+    setOnClickListener {
+        AppLanguage.set(AppLanguagePreference.FollowSystem)
+    }
+}
+```
+
+## Behavior differences
+
+| Capability | Android 13+ | Android 7.0–12 |
+| --- | --- | --- |
+| App language (follow / explicit) | Written to system app-language settings | Persisted by AppCompat |
+| System language (read + open settings) | Supported | Supported |
+| Other app's language entry | Deep link to the system page | Falls back to app details |
+
+`SystemLanguage` does not modify the system language. There is no reliable public API for non-root devices, and the library intentionally does not try.
+
+## Pitfalls
+
+- **Activity is not an AppCompatActivity**: `AppCompatDelegate` will not apply, and language switching silently does nothing.
+- **Missing `localeConfig`**: the picker is empty and Android 13+ settings will not list the app.
+- **Calling `set()` off the main thread**: post it back to the main thread.
+- **Expecting to change the system language**: `SystemLanguage` is read-only; use `openSettings()`.
+- **Reading `current()` in composition and expecting recomposition**: language changes usually recreate the Activity. Keep your own selection state if you need immediate UI feedback.
+- **Non-BCP-47 tags**: use `zh-CN`, `en`, `pt-BR`. `CommonLocales.all` is a reasonable default list.
+
+## Verify
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Manual checks:
+
+1. Switch to English and confirm the UI changes.
+2. Kill the process and relaunch; the choice is still there.
+3. Android 13+: Settings → Apps → your app → Language lists and applies the choice.
+4. The system-language entry opens the system language page.
+
+## License
+
+Apache-2.0. Source: [xechoz/LocaleKit](https://github.com/xechoz/LocaleKit).

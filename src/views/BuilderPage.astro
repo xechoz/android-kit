@@ -1,0 +1,86 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Composer, { type BuilderComponent } from '@/components/builder/Composer';
+import { components } from '@/data/registry';
+import { getSkills } from '@/lib/skills';
+import { site } from '@/lib/site';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const copy = t(lang);
+
+const builderComponents: BuilderComponent[] = components.map((component) => ({
+  slug: component.slug,
+  name: component.name,
+  part: component.part,
+  artifact: component.artifact,
+  version: component.version,
+  minSdk: component.minSdk,
+  license: component.license,
+  demo: component.demo,
+  tagline: component.tagline[lang],
+  status: component.status,
+}));
+
+const skills = getSkills().map(({ slug, raw }) => ({ slug, raw }));
+---
+
+<BaseLayout
+  lang={lang}
+  title={copy.builder.title}
+  description={copy.builder.lead}
+  image="/og/default.png"
+>
+  <section class="border-b border-line">
+    <div class="grid-bg pointer-events-none absolute inset-x-0 top-16 -z-10 h-72 opacity-50"></div>
+    <div class="wrap grid gap-8 py-14 md:grid-cols-[1fr_auto] md:items-end md:py-18">
+      <div>
+        <p class="label">04 / {copy.nav.builder}</p>
+        <h1 class="display mt-4 text-[clamp(2.8rem,6.4vw,5.2rem)]">{copy.builder.title}</h1>
+        <p class="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">{copy.builder.lead}</p>
+      </div>
+      <div class="flex items-end gap-6 md:flex-col md:items-end md:gap-2">
+        <span class="display text-[4rem] leading-none">{String(components.length).padStart(2, '0')}</span>
+        <span class="label pb-2">{copy.components.count}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap py-10 md:py-14">
+    <Composer
+      client:load
+      components={builderComponents}
+      skills={skills}
+      copy={copy.builder}
+      common={copy.common}
+      statusLabels={copy.status}
+      skillsInstall={site.skillsInstall}
+      repo={site.repo}
+    />
+  </section>
+
+  <section class="border-t border-line bg-surface/40">
+    <div class="wrap grid gap-8 py-12 md:grid-cols-3 md:py-16">
+      <div>
+        <p class="label">01 / {copy.builder.next}</p>
+        <p class="mt-2 text-[12.5px] leading-relaxed text-muted">{copy.builder.nextBody}</p>
+      </div>
+      <div>
+        <p class="label">02 / {copy.builder.skillsIncluded}</p>
+        <p class="mt-2 text-[12.5px] leading-relaxed text-muted">
+          TASK.md · AGENTS.md · components.json · skills/
+        </p>
+      </div>
+      <div>
+        <p class="label">03 / {copy.builder.constraints}</p>
+        <p class="mt-2 text-[12.5px] leading-relaxed text-muted">
+          {copy.builder.constraintMinSdk} · {copy.builder.constraintCompose}
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

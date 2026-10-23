@@ -1,0 +1,151 @@
+---
+locale: en
+title: Loga
+---
+
+Loga is a Kotlin Multiplatform logger backed by `mmap`. Lines go into a memory-mapped file first; a background worker then appends snapshots to daily text files.
+
+The write path never touches disk I/O directly. Dirty pages stay in the kernel page cache, so the most recent lines survive a process kill. That is useful when you want the last few lines after a crash.
+
+> The current version is `0.0.1`. The API may still change; evaluate that before production use.
+
+## Platforms
+
+| Platform | Target | mmap implementation |
+| --- | --- | --- |
+| Android | `androidTarget` | `MappedByteBuffer` |
+| JVM | `jvm` | `MappedByteBuffer` |
+| iOS | `iosArm64` / `iosSimulatorArm64` / `iosX64` | `platform.posix.mmap` |
+
+Android minSdk is 24. It depends on Kotlin Coroutines, kotlinx-datetime, and atomicfu.
+
+## Install
+
+```kotlin
+dependencies {
+    implementation("io.github.xechoz:loga:0.0.1")
+}
+```
+
+KMP projects resolve the platform variant automatically.
+
+## Initialize
+
+Android:
+
+```kotlin
+class App : Application() {
+    override fun onCreate() {
+        super.onCreate()
+
+        Loga.init(
+            context = this,
+            config = LogConfig(
+                logDirectory = File(filesDir, "logs").absolutePath,
+                isDebug = BuildConfig.DEBUG,
+                retentionDays = 7,
+            ),
+        )
+    }
+}
+```
+
+JVM / iOS:
+
+```kotlin
+Loga.init(
+    LogConfig(
+        logDirectory = "/path/to/logs",
+        isDebug = false,
+        retentionDays = 7,
+    ),
+)
+```
+
+On Android the default directory is `getExternalFilesDir("logs")/logs`; on the JVM it is `~/logs`. Pass `logDirectory` explicitly in production instead of relying on defaults.
+
+## Write logs
+
+```kotlin
+Loga.v("Network", "verbose")
+Loga.d("Network", "cache hit")
+Loga.i("Network", "request finished")
+Loga.w("Network", "slow response")
+Loga.e("Network", "request failed")
+
+Loga.flush()
+```
+
+`flush()` syncs the mmap buffer into the daily file. A background flush runs every 5 seconds by default; change `flushIntervalMillis`, or set it to `0` to disable.
+
+`release()` flushes, cancels the timer, and uninstalls the uncaught-exception hook. `init()` calls `release()` first, so re-initialization is safe.
+
+## Configuration
+
+```kotlin
+LogConfig(
+    logDirectory = null,          // platform default
+    bufferSize = 400 * 1024,      // mmap buffer size
+    level = Level.DEBUG,          // minimum level
+    formatter = DefaultFormatter, // "L/TAG: msg\n"
+    retentionDays = 7,            // delete older daily files
+    flushIntervalMillis = 5_000,  // background flush; 0 disables
+    isDebug = true,               // true: file + console; false: file only
+    appenders = null,             // null derives from isDebug
+    logUncaughtExceptions = true, // log and flush crashes
+)
+```
+
+Custom output:
+
+```kotlin
+class JsonFormatter : Formatter {
+    override fun format(level: Int, tag: String, msg: String): String =
+        """{"level":"${Level.letter(level)}","tag":"$tag","msg":"$msg"}\n"""
+}
+
+class CrashUploader : Appender {
+    override fun append(level: Int, tag: String, line: String) {
+        // Keep this cheap; do not do disk or network I/O here.
+    }
+
+    override fun flush() = Unit
+    override fun release() = Unit
+}
+```
+
+## File layout
+
+- One file per day, named `yyyy_MM_dd.txt`.
+- Files older than `retentionDays` are deleted on init and on each rotation.
+- The buffer file is `.logCache`, with a persistent header used to recover the dirty tail from a previous process.
+- A line larger than the whole buffer is truncated with a warning.
+
+## Pitfalls
+
+- **Writing before init**: `Loga.init` must run first; the Android default directory needs a `context`.
+- **Leaving `isDebug = true`**: release builds will also log to the console. Pass `BuildConfig.DEBUG`.
+- **Heavy I/O in an Appender**: `append()` runs on the logging thread. File writing is already handled by the built-in mmap appender; custom appenders should stay cheap.
+- **Multiple processes writing one directory**: there is no cross-process lock. Use a different `logDirectory` per process.
+- **Expecting `flush()` to force every line to disk**: it syncs the buffer into the daily file; high-frequency writes still go through mmap.
+- **Ignoring `0.0.1` API stability**: read the source or changelog before upgrading.
+
+## Verify
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Check:
+
+1. Write logs at several levels.
+2. Call `flush()` and find today's `yyyy_MM_dd.txt` under `logDirectory`.
+3. Kill the process and relaunch; earlier logs are still there.
+4. Trigger an uncaught exception (debug build only) and confirm it was written.
+
+## License
+
+Apache-2.0. Source: [xechoz/Loga](https://github.com/xechoz/Loga).
+
+> The README notes that the library was primarily written by AI, with the author providing the design and specification. Review the code against your own requirements before adopting it.

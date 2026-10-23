@@ -1,0 +1,15 @@
+---
+import ComponentDetail from '@/views/ComponentDetail.astro';
+import { components } from '@/data/registry';
+
+export function getStaticPaths() {
+  return components.map((component) => ({
+    params: { slug: component.slug },
+    props: { slug: component.slug },
+  }));
+}
+
+const { slug } = Astro.props;
+---
+
+<ComponentDetail lang="zh" slug={slug} />

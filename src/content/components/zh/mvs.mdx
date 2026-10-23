@@ -1,0 +1,171 @@
+---
+locale: zh
+title: MVS
+---
+
+MVS 是一个基于 Kotlin Coroutines Flow 的精简 Redux。它不引入 RxJava，也不要求你继承某个框架基类。一个界面由三个角色组成：
+
+- **state**：不可变数据类，实现 `RxState` 标记接口。
+- **repo**：Redux 里的 action 容器。持有状态，只允许通过 `setState` 修改。
+- **view**：消费状态，调用 repo 的方法。
+
+状态修改被限制在 repo 内部，外部拿不到 `MutableStateFlow`，这是它和「随手一个 ViewModel + MutableStateFlow」最大的区别。
+
+## 安装
+
+```kotlin
+dependencies {
+    implementation("io.github.xechoz:mvs:1.1.0")
+}
+```
+
+Kotlin Multiplatform 库，目标为 Android 和 JVM。Gradle module metadata 会自动选择 `mvs-android` / `mvs-jvm`。依赖 Kotlin Coroutines，Android minSdk 26。
+
+> **许可证：GPL-3.0。** 如果你的项目不能接受 GPL 的分发约束，先不要接入。
+
+## 三个角色
+
+```kotlin
+// 1. state
+data class CounterState(val count: Int = 0) : RxState
+
+// 2. repo
+class CounterRepo : RxRepo<CounterState> by RxRepo(initState = CounterState()) {
+    fun increment() {
+        setState { copy(count = count + 1) }
+    }
+
+    fun reset() {
+        setState { CounterState() }
+    }
+}
+
+// 3. view
+class CounterView {
+    private val repo = CounterRepo()
+    private val scope = MainScope()
+
+    init {
+        scope.launch {
+            repo.onEach(CounterState::count) { count ->
+                text = "Click $count"
+            }
+        }
+
+        setOnClickListener {
+            repo.increment()
+        }
+    }
+}
+```
+
+`setState` 是 `RxRepo` 的扩展成员函数。它只能从 repo 实现类或 repo 的扩展函数里调用，外部无法直接改状态。
+
+## ViewModel 用法
+
+`RxRepo` 不是 ViewModel，但可以通过 Kotlin 委托把它混进 ViewModel：
+
+```kotlin
+class CounterViewModel : ViewModel(),
+    RxRepo<CounterState> by RxRepo(initState = CounterState()) {
+
+    fun increment() {
+        setState { copy(count = count + 1) }
+    }
+
+    fun reset() {
+        setState { CounterState() }
+    }
+}
+```
+
+## Compose 用法
+
+```kotlin
+@Composable
+fun CounterRoute(viewModel: CounterViewModel) {
+    val state by viewModel.asFlow().collectAsState(initial = viewModel.state)
+    CounterScreen(
+        state = state,
+        onIncrement = viewModel::increment,
+        onReset = viewModel::reset,
+    )
+}
+
+@Composable
+fun CounterScreen(
+    state: CounterState,
+    onIncrement: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Column(Modifier.padding(24.dp)) {
+        Text("Count: ${state.count}", style = MaterialTheme.typography.headlineMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onIncrement) { Text("+1") }
+            OutlinedButton(onClick = onReset) { Text("Reset") }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CounterScreenPreview() {
+    MaterialTheme {
+        CounterScreen(CounterState(count = 3), onIncrement = {}, onReset = {})
+    }
+}
+```
+
+`asFlow()` 暴露整个状态，适合直接 `collectAsState`。如果要监听单个属性，用 `onEach`。
+
+## API
+
+| 成员 | 说明 |
+| --- | --- |
+| `val state: State` | 同步读取当前状态 |
+| `fun RxRepo<State>.setState(reducer: State.() -> State)` | 以旧状态为 receiver 计算新状态；只能在 repo 内调用 |
+| `fun asFlow(): Flow<State>` | 把整个状态暴露为 Flow |
+| `suspend fun onEach(action: (State) -> Unit)` | 在调用方协程作用域内监听整个状态 |
+| `suspend fun <A : Any> onEach(property: KProperty1<State, A>, action: (A) -> Unit)` | 监听单个属性 |
+| `suspend fun <A : Any> onEach(property: KProperty1<State, A>): Flow<A>` | 把单个属性暴露为 Flow，便于 `combine` |
+| `fun <State : RxState> RxRepo(initState: State): RxRepo<State>` | 创建 repo 的工厂函数 |
+
+## 用扩展函数增加行为
+
+`setState` 设计成扩展成员，是为了让 repo 的行为可以用扩展函数拆开，而不必把类撑大：
+
+```kotlin
+fun TodoRepo.remove(todo: TodoRow) {
+    setState {
+        copy(todos = todos.filter { it != todo })
+    }
+}
+```
+
+外部模块可以给 repo 增加操作，但仍然不能绕过 `setState` 直接改状态。
+
+## 常见坑
+
+- **以为 `onEach` 会自己管理生命周期**：它使用的是调用方传入的协程作用域。`scope.launch { repo.onEach(...) }` 里的 `scope` 取消后监听才会停止。
+- **在 composable 里直接调用 suspend 的 `onEach`**：用 `asFlow()` + `collectAsState`，或者把 `onEach` 放进 `LaunchedEffect`。
+- **从外部改状态**：`setState` 不是公开的顶层函数，只能从 repo 实现或扩展函数调用。不要为了图方便把 `MutableStateFlow` 暴露出去。
+- **在 reducer 里做副作用**：`setState` 的 lambda 应该是纯函数，只根据旧 state 计算新 state。网络、数据库等操作放在 repo 的 suspend 方法里，算完再 `setState`。
+- **忘记 minSdk 26**：Android 目标最低 26。
+- **忽略 GPL-3.0**：这是 GPL 库，不是 Apache/MIT。
+
+## 验证
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+检查：
+
+1. 点击按钮，计数更新，界面重组。
+2. 旋转屏幕或重建 Activity，状态是否按你的预期保留（取决于 repo 放在 ViewModel 还是普通类）。
+3. `onEach` 的协程取消后不再收到更新。
+
+## 许可证
+
+GPL-3.0。源码：[xechoz/android-kotlin-redux](https://github.com/xechoz/android-kotlin-redux)。

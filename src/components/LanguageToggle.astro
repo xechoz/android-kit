@@ -1,0 +1,23 @@
+---
+import { switchLang } from '@/lib/routing';
+import { otherLang, t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const target = otherLang(lang);
+const label = target === 'en' ? 'EN' : '中文';
+const copy = t(lang);
+---
+
+<a
+  class="label transition-colors hover:text-ink"
+  href={switchLang(Astro.url.pathname, target)}
+  hreflang={target}
+  lang={target}
+  aria-label={`${copy.lang.switch}: ${label}`}
+>
+  {label}
+</a>

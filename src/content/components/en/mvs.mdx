@@ -1,0 +1,171 @@
+---
+locale: en
+title: MVS
+---
+
+MVS is a minimal Redux built on Kotlin Coroutines Flow. It does not bring in RxJava and does not require a framework base class. A screen has three roles:
+
+- **state**: an immutable data class implementing the `RxState` marker.
+- **repo**: the Redux equivalent of actions. It owns the state and only exposes mutations through `setState`.
+- **view**: consumes state and calls repo methods.
+
+Mutation is confined to the repo. Callers never get the `MutableStateFlow`. That is the difference between MVS and "a ViewModel with a public MutableStateFlow".
+
+## Install
+
+```kotlin
+dependencies {
+    implementation("io.github.xechoz:mvs:1.1.0")
+}
+```
+
+Kotlin Multiplatform library targeting Android and JVM. Gradle module metadata resolves `mvs-android` / `mvs-jvm` automatically. It depends on Kotlin Coroutines; Android minSdk is 26.
+
+> **License: GPL-3.0.** If your project cannot accept GPL distribution terms, do not use it.
+
+## The three roles
+
+```kotlin
+// 1. state
+data class CounterState(val count: Int = 0) : RxState
+
+// 2. repo
+class CounterRepo : RxRepo<CounterState> by RxRepo(initState = CounterState()) {
+    fun increment() {
+        setState { copy(count = count + 1) }
+    }
+
+    fun reset() {
+        setState { CounterState() }
+    }
+}
+
+// 3. view
+class CounterView {
+    private val repo = CounterRepo()
+    private val scope = MainScope()
+
+    init {
+        scope.launch {
+            repo.onEach(CounterState::count) { count ->
+                text = "Click $count"
+            }
+        }
+
+        setOnClickListener {
+            repo.increment()
+        }
+    }
+}
+```
+
+`setState` is an extension member of `RxRepo`. It is only callable from a repo implementation or a repo extension, so external code cannot mutate state.
+
+## With a ViewModel
+
+`RxRepo` is not a ViewModel, but Kotlin delegation can mix it into one:
+
+```kotlin
+class CounterViewModel : ViewModel(),
+    RxRepo<CounterState> by RxRepo(initState = CounterState()) {
+
+    fun increment() {
+        setState { copy(count = count + 1) }
+    }
+
+    fun reset() {
+        setState { CounterState() }
+    }
+}
+```
+
+## Compose
+
+```kotlin
+@Composable
+fun CounterRoute(viewModel: CounterViewModel) {
+    val state by viewModel.asFlow().collectAsState(initial = viewModel.state)
+    CounterScreen(
+        state = state,
+        onIncrement = viewModel::increment,
+        onReset = viewModel::reset,
+    )
+}
+
+@Composable
+fun CounterScreen(
+    state: CounterState,
+    onIncrement: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Column(Modifier.padding(24.dp)) {
+        Text("Count: ${state.count}", style = MaterialTheme.typography.headlineMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onIncrement) { Text("+1") }
+            OutlinedButton(onClick = onReset) { Text("Reset") }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CounterScreenPreview() {
+    MaterialTheme {
+        CounterScreen(CounterState(count = 3), onIncrement = {}, onReset = {})
+    }
+}
+```
+
+`asFlow()` exposes the whole state and works well with `collectAsState`. Use `onEach` for a single property.
+
+## API
+
+| Member | Description |
+| --- | --- |
+| `val state: State` | Synchronously read the current state |
+| `fun RxRepo<State>.setState(reducer: State.() -> State)` | Compute the next state from the old one; repo-only |
+| `fun asFlow(): Flow<State>` | Expose the whole state as a Flow |
+| `suspend fun onEach(action: (State) -> Unit)` | Observe the whole state in the caller's coroutine scope |
+| `suspend fun <A : Any> onEach(property: KProperty1<State, A>, action: (A) -> Unit)` | Observe one property |
+| `suspend fun <A : Any> onEach(property: KProperty1<State, A>): Flow<A>` | Expose one property as a Flow for `combine` |
+| `fun <State : RxState> RxRepo(initState: State): RxRepo<State>` | Factory function |
+
+## Extending a repo
+
+`setState` is an extension member so repo behavior can be split into extension functions:
+
+```kotlin
+fun TodoRepo.remove(todo: TodoRow) {
+    setState {
+        copy(todos = todos.filter { it != todo })
+    }
+}
+```
+
+Other modules can add operations, but they still cannot bypass `setState`.
+
+## Pitfalls
+
+- **Assuming `onEach` manages its own lifecycle**: it runs in the caller's coroutine scope. Cancel `scope.launch { ... }` to stop observing.
+- **Calling suspend `onEach` from a composable**: use `asFlow()` + `collectAsState`, or put `onEach` in a `LaunchedEffect`.
+- **Mutating from outside**: `setState` is not a public top-level function. Do not expose the `MutableStateFlow` to work around it.
+- **Side effects inside reducers**: the `setState` lambda should be pure. Do network or database work in a suspend repo method, then call `setState`.
+- **Forgetting minSdk 26**.
+- **Ignoring GPL-3.0**: this is a GPL library, not Apache/MIT.
+
+## Verify
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Check:
+
+1. Tapping the button updates the count and recomposes.
+2. Activity recreation keeps state in the way you expect (depends on whether the repo lives in a ViewModel).
+3. Cancelling the `onEach` scope stops updates.
+
+## License
+
+GPL-3.0. Source: [xechoz/android-kotlin-redux](https://github.com/xechoz/android-kotlin-redux).

@@ -1,0 +1,151 @@
+---
+locale: zh
+title: Loga
+---
+
+Loga 是一个基于 `mmap` 的 Kotlin Multiplatform 日志库。日志先写进内存映射文件，再由后台 worker 把快照追加到按天轮转的文本文件。
+
+写入路径不直接碰磁盘 I/O；脏页留在内核 page cache，进程被杀后最近的日志仍然在文件里。这适合「崩溃后还想看到最后几行」的场景。
+
+> 当前版本 `0.0.1`，API 仍可能调整。生产接入前先评估这一点。
+
+## 平台
+
+| 平台 | Target | mmap 实现 |
+| --- | --- | --- |
+| Android | `androidTarget` | `MappedByteBuffer` |
+| JVM | `jvm` | `MappedByteBuffer` |
+| iOS | `iosArm64` / `iosSimulatorArm64` / `iosX64` | `platform.posix.mmap` |
+
+Android minSdk 24。依赖 Kotlin Coroutines、kotlinx-datetime、atomicfu。
+
+## 安装
+
+```kotlin
+dependencies {
+    implementation("io.github.xechoz:loga:0.0.1")
+}
+```
+
+KMP 工程会自动解析平台变体。
+
+## 初始化
+
+Android：
+
+```kotlin
+class App : Application() {
+    override fun onCreate() {
+        super.onCreate()
+
+        Loga.init(
+            context = this,
+            config = LogConfig(
+                logDirectory = File(filesDir, "logs").absolutePath,
+                isDebug = BuildConfig.DEBUG,
+                retentionDays = 7,
+            ),
+        )
+    }
+}
+```
+
+JVM / iOS：
+
+```kotlin
+Loga.init(
+    LogConfig(
+        logDirectory = "/path/to/logs",
+        isDebug = false,
+        retentionDays = 7,
+    ),
+)
+```
+
+在 Android 上，默认目录是 `getExternalFilesDir("logs")/logs`；JVM 默认是 `~/logs`。生产环境建议显式传 `logDirectory`，不要依赖默认值。
+
+## 写日志
+
+```kotlin
+Loga.v("Network", "verbose")
+Loga.d("Network", "cache hit")
+Loga.i("Network", "request finished")
+Loga.w("Network", "slow response")
+Loga.e("Network", "request failed")
+
+Loga.flush()
+```
+
+`flush()` 把 mmap 缓冲区里的内容同步到按天文件。后台默认每 5 秒 flush 一次，可通过 `flushIntervalMillis` 调整，设为 `0` 关闭定时 flush。
+
+`release()` 会 flush、取消定时任务、卸载未捕获异常钩子。`init()` 会先调用 `release()`，所以重复初始化是安全的。
+
+## 配置
+
+```kotlin
+LogConfig(
+    logDirectory = null,          // 默认值因平台而异
+    bufferSize = 400 * 1024,      // mmap 缓冲区大小
+    level = Level.DEBUG,          // 最低等级
+    formatter = DefaultFormatter, // "L/TAG: msg\n"
+    retentionDays = 7,            // 清理超过天数的文件
+    flushIntervalMillis = 5_000,  // 后台 flush 间隔；0 关闭
+    isDebug = true,               // true: 文件 + 控制台；false: 仅文件
+    appenders = null,             // null 时按 isDebug 推导
+    logUncaughtExceptions = true, // 记录未捕获异常并 flush
+)
+```
+
+自定义输出：
+
+```kotlin
+class JsonFormatter : Formatter {
+    override fun format(level: Int, tag: String, msg: String): String =
+        """{"level":"${Level.letter(level)}","tag":"$tag","msg":"$msg"}\n"""
+}
+
+class CrashUploader : Appender {
+    override fun append(level: Int, tag: String, line: String) {
+        // 只做轻量操作，不要在这里做磁盘或网络 I/O
+    }
+
+    override fun flush() = Unit
+    override fun release() = Unit
+}
+```
+
+## 文件布局
+
+- 每天一个文件，命名为 `yyyy_MM_dd.txt`。
+- 启动时和每次轮转时清理超过 `retentionDays` 的文件。
+- 缓冲区文件是 `.logCache`，带持久化 header，用于启动时恢复上一次进程留下的脏尾。
+- 单条日志超过整个缓冲区时会被截断并给出警告。
+
+## 常见坑
+
+- **没有初始化就写日志**：`Loga.init` 必须先执行，Android 上默认目录依赖 `context`。
+- **`isDebug` 用默认值 `true`**：release 包也会输出控制台日志。传 `BuildConfig.DEBUG`。
+- **在 Appender 里做重 I/O**：`append()` 在日志调用线程上执行；文件写入已经由内置的 mmap appender 异步处理。自定义 appender 应该轻量。
+- **多进程写同一个目录**：当前实现没有跨进程锁。多个进程请使用不同的 `logDirectory`。
+- **以为 `flush()` 会立刻落盘到最终文件**：它触发的是缓冲区到按天文件的同步；真正的高频写入仍然先走 mmap。
+- **忽略 `0.0.1` 的 API 稳定性**：升级前看 CHANGELOG / 源码。
+
+## 验证
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+检查：
+
+1. 写几条不同等级的日志。
+2. 调用 `flush()`，在 `logDirectory` 下找到当天的 `yyyy_MM_dd.txt`。
+3. 杀掉进程再启动，之前的日志仍在。
+4. 触发一次未捕获异常（仅调试包），确认崩溃日志被写入。
+
+## 许可证
+
+Apache-2.0。源码：[xechoz/Loga](https://github.com/xechoz/Loga)。
+
+> README 里注明该库主要由 AI 编写，作者提供设计与规格。接入前建议按你的场景做一次代码审查。

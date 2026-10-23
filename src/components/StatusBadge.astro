@@ -1,0 +1,20 @@
+---
+import { t, type Lang } from '@/i18n/ui';
+import type { ComponentStatus } from '@/data/registry';
+
+interface Props {
+  status: ComponentStatus;
+  lang: Lang;
+}
+
+const { status, lang } = Astro.props;
+const copy = t(lang);
+const dotClass =
+  status === 'experimental' ? 'dot--experimental' : status === 'source-only' ? 'dot--source' : '';
+const statusLabel = status === 'source-only' ? copy.status.sourceOnly : copy.status[status];
+---
+
+<span class="inline-flex items-center gap-2">
+  <span class:list={['dot', dotClass]}></span>
+  <span class="label">{statusLabel}</span>
+</span>

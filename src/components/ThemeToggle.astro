@@ -1,0 +1,36 @@
+---
+import Icon from '@/components/Icon.astro';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const copy = t(lang);
+---
+
+<button
+  type="button"
+  id="theme-toggle"
+  class="icon-btn"
+  aria-label={copy.theme.toggle}
+  title={copy.theme.toggle}
+>
+  <Icon name="moon" size={15} class="theme-icon theme-icon--moon" />
+  <Icon name="sun" size={15} class="theme-icon theme-icon--sun" />
+</button>
+
+<style>
+  .theme-icon--sun {
+    display: none;
+  }
+
+  :global([data-theme='dark']) .theme-icon--sun {
+    display: block;
+  }
+
+  :global([data-theme='dark']) .theme-icon--moon {
+    display: none;
+  }
+</style>

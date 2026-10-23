@@ -1,0 +1,110 @@
+---
+import Icon from '@/components/Icon.astro';
+import LanguageToggle from '@/components/LanguageToggle.astro';
+import ThemeToggle from '@/components/ThemeToggle.astro';
+import { localizedHref, stripBase } from '@/lib/routing';
+import { site } from '@/lib/site';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+  showLanguage?: boolean;
+}
+
+const { lang, showLanguage = true } = Astro.props;
+const copy = t(lang);
+
+const raw = stripBase(Astro.url.pathname);
+const section = raw.replace(/^\/en(?=\/|$)/, '') || '/';
+
+const nav = [
+  { path: '/components/', label: copy.nav.components },
+  { path: '/skills/', label: copy.nav.skills },
+  { path: '/builder/', label: copy.nav.builder },
+  { path: '/about/', label: copy.nav.about },
+];
+
+function isActive(path: string) {
+  return path === '/' ? section === '/' : section === path || section.startsWith(path);
+}
+---
+
+<header class="sticky top-0 z-50 border-b border-line bg-bg">
+  <div class="wrap flex h-16 items-center justify-between gap-5">
+    <a
+      href={localizedHref('/', lang)}
+      class="mono shrink-0 text-[13px] tracking-[0.04em] lowercase"
+      aria-label={copy.meta.siteTitle}
+    >
+      xechoz<span class="text-accent">/</span>android
+    </a>
+
+    <nav class="hidden items-center gap-7 md:flex" aria-label="Primary">
+      {
+        nav.map((item) => (
+          <a
+            href={localizedHref(item.path, lang)}
+            class="nav-link"
+            aria-current={isActive(item.path) ? 'page' : undefined}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <a
+        href={site.github}
+        target="_blank"
+        rel="noreferrer noopener"
+        class="icon-btn"
+        aria-label={copy.nav.github}
+        title={copy.nav.github}
+      >
+        <Icon name="github" size={15} />
+      </a>
+      <ThemeToggle lang={lang} />
+      {
+        showLanguage && (
+          <>
+            <span class="hidden h-4 w-px bg-line sm:block"></span>
+            <LanguageToggle lang={lang} />
+          </>
+        )
+      }
+
+      <details id="mobile-menu" class="relative md:hidden">
+        <summary class="icon-btn cursor-pointer list-none" aria-label={copy.nav.menu}>
+          <Icon name="menu" size={16} />
+        </summary>
+        <div
+          class="absolute right-0 top-11 z-50 w-56 border border-line bg-surface p-2 shadow-xl"
+        >
+          {
+            nav.map((item) => (
+              <a
+                href={localizedHref(item.path, lang)}
+                class="block px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                aria-current={isActive(item.path) ? 'page' : undefined}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+
+<style>
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  #mobile-menu[open] summary {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+</style>

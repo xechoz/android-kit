@@ -1,0 +1,15 @@
+---
+import SkillDetail from '@/views/SkillDetail.astro';
+import { getSkills } from '@/lib/skills';
+
+export function getStaticPaths() {
+  return getSkills().map((skill) => ({
+    params: { slug: skill.slug },
+    props: { slug: skill.slug },
+  }));
+}
+
+const { slug } = Astro.props;
+---
+
+<SkillDetail lang="zh" slug={slug} />

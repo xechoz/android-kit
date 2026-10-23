@@ -1,0 +1,188 @@
+---
+locale: en
+title: ServiceCenter
+---
+
+ServiceCenter is a KMP service registry and discovery library. `@Service` plus KSP generates the registry. The runtime surface is `setService` / `getService`, and the registry itself uses no reflection.
+
+JVM and Android discover generated registrars through `META-INF/services`. JS, Wasm, and Native have no reliable auto-discovery, so they install explicitly with `install(...)`.
+
+> The repository currently has no LICENSE file. Confirm authorization with the author before using it in a commercial or open-source project.
+
+## Android / JVM project
+
+```kotlin
+plugins {
+    alias(libs.plugins.ksp)
+}
+
+dependencies {
+    implementation("io.github.xechoz:service-center:0.0.1")
+    ksp("io.github.xechoz:service-center-compiler:0.0.1")
+}
+```
+
+## KMP project
+
+KSP generates into `commonMain`, so every platform shares one registry:
+
+```kotlin
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.ksp)
+}
+
+kotlin {
+    sourceSets {
+        commonMain {
+            kotlin.srcDir("build/generated/ksp/metadata/commonMain/kotlin")
+            resources.srcDir("build/generated/ksp/metadata/commonMain/resources")
+
+            dependencies {
+                implementation("io.github.xechoz:service-center:0.0.1")
+            }
+        }
+    }
+}
+
+dependencies {
+    add("kspCommonMainMetadata", "io.github.xechoz:service-center-compiler:0.0.1")
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
+    if (name != "kspCommonMainKotlinMetadata") {
+        dependsOn("kspCommonMainKotlinMetadata")
+    }
+}
+
+tasks.matching { it.name.startsWith("ksp") && it.name != "kspCommonMainKotlinMetadata" }.configureEach {
+    dependsOn("kspCommonMainKotlinMetadata")
+}
+
+tasks.withType<org.gradle.language.jvm.tasks.ProcessResources>().configureEach {
+    dependsOn("kspCommonMainKotlinMetadata")
+}
+
+tasks.matching { it.name.endsWith("JavaRes") }.configureEach {
+    dependsOn("kspCommonMainKotlinMetadata")
+}
+```
+
+Optional KSP arguments:
+
+```kotlin
+ksp {
+    arg("serviceCenter.generatedPackage", "com.example.generated")
+    arg("serviceCenter.generatedName", "ServiceCenterGenerated")
+}
+```
+
+The default is `me.xechoz.servicecenter.generated.ServiceCenterGenerated`.
+
+## Declare a service
+
+```kotlin
+import me.xechoz.servicecenter.IService
+import me.xechoz.servicecenter.Service
+
+interface Greeter : IService {
+    fun greet(): String
+}
+
+@Service
+class GreeterImpl : Greeter {
+    override fun greet(): String = "Hello from ServiceCenter"
+}
+```
+
+Rules:
+
+- A `@Service` class must implement exactly one sub-interface of `IService` (not `IService` itself).
+- It must be a concrete class or an `object`; no abstract, sealed, or inner classes.
+- It needs an accessible no-arg constructor; constructor parameters with defaults are fine.
+- One implementation per service interface. Duplicate bindings fail at KSP time.
+
+The registry key is that direct parent interface:
+
+```kotlin
+val greeter = ServiceCenter.getService<Greeter>()
+```
+
+## Initialize
+
+JVM / Android:
+
+```kotlin
+ServiceCenter.initialize()
+```
+
+This discovers every generated registrar on the classpath. It is safe to call repeatedly.
+
+JS / Wasm / Native install explicitly:
+
+```kotlin
+ServiceCenter.install(AppGenerated(), DataGenerated())
+```
+
+The generated class defaults to `me.xechoz.servicecenter.generated.ServiceCenterGenerated`; override it with the KSP arguments above.
+
+## API
+
+```kotlin
+object ServiceCenter {
+    fun initialize()
+    fun install(vararg registrars: ServiceRegistrar)
+
+    fun <T : Any> setService(type: KClass<T>, factory: () -> T)
+    inline fun <reified T : Any> setService(noinline factory: () -> T)
+
+    fun <T : Any> getService(type: KClass<T>): T
+    inline fun <reified T : Any> getService(): T
+
+    fun <T : Any> getServiceOrNull(type: KClass<T>): T?
+    inline fun <reified T : Any> getServiceOrNull(): T?
+
+    fun reset()
+}
+```
+
+`getService` throws `ServiceNotFoundException` with the registered types in the message. Use `getServiceOrNull` when absence is expected.
+
+## Behavior
+
+| Item | Behavior |
+| --- | --- |
+| Lifecycle | Lazy singleton, created and cached on first `getService` |
+| Auto-discovery | JVM/Android parse generated `META-INF/services`; no-op elsewhere |
+| Duplicates | Two registrars binding the same type throw `DuplicateServiceException`; re-installing the same registrar is idempotent |
+| Trigger | No lazy init; call `initialize()` / `install(...)` explicitly |
+| Tests | `ServiceCenter.reset()` clears services, registrars, and the initialized flag |
+| Thread safety | atomicfu copy-on-write; `lazy(SYNCHRONIZED)` singletons |
+
+## Pitfalls
+
+- **Implementing only `IService`**: KSP rejects it. Add a sub-interface such as `interface Greeter : IService`.
+- **Multiple service interfaces**: a `@Service` class may bind exactly one.
+- **No accessible no-arg constructor**: KSP rejects it. All-default parameters are fine.
+- **Missing `kspCommonMainMetadata` wiring in KMP**: generated code and `META-INF/services` will not reach commonMain.
+- **Forgetting `initialize()`**: `getService` does not trigger discovery.
+- **Duplicate bindings across modules**: one implementation per interface; plan module boundaries.
+- **Leaking global state in tests**: call `ServiceCenter.reset()`.
+- **Unspecified license**: there is no LICENSE file; confirm authorization before use.
+
+## Verify
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Check:
+
+1. Call `ServiceCenter.initialize()`.
+2. `getService<Greeter>()` returns the implementation instead of throwing.
+3. Remove the implementation module and confirm the compile or runtime failure is what you expect.
+
+## License
+
+**The repository currently has no LICENSE file.** Source: [xechoz/ServiceCenter](https://github.com/xechoz/ServiceCenter). Do not assume commercial use is permitted until authorization is explicit.

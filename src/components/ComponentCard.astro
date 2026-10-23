@@ -1,0 +1,93 @@
+---
+import CopyButton from '@/components/CopyButton.astro';
+import Icon from '@/components/Icon.astro';
+import StatusBadge from '@/components/StatusBadge.astro';
+import { localizedHref } from '@/lib/routing';
+import { t, type Lang } from '@/i18n/ui';
+import type { Component } from '@/data/registry';
+
+interface Props {
+  component: Component;
+  lang: Lang;
+}
+
+const { component, lang } = Astro.props;
+const copy = t(lang);
+const detailHref = localizedHref(`/components/${component.slug}/`, lang);
+
+const platformLabel = component.platforms
+  .slice(0, 3)
+  .map((platform) => copy.platforms[platform])
+  .join(' / ');
+const extraPlatforms = component.platforms.length > 3 ? ` +${component.platforms.length - 3}` : '';
+---
+
+<article class="card group min-h-[264px] p-5 md:p-6">
+  <a href={detailHref} class="card__link" aria-label={component.name}></a>
+
+  <div class="flex items-center justify-between gap-4">
+    <span class="part-no">{component.part}</span>
+    <StatusBadge status={component.status} lang={lang} />
+  </div>
+
+  <div class="mt-6 flex items-start justify-between gap-4">
+    <h3 class="font-sans text-[1.35rem] font-semibold tracking-[-0.02em] leading-tight">
+      {component.name}
+    </h3>
+    <Icon
+      name="arrow-up-right"
+      size={18}
+      class="mt-1 shrink-0 text-muted transition-colors group-hover:text-accent"
+    />
+  </div>
+
+  <p class="mt-2 text-[13.5px] leading-relaxed text-muted">
+    {component.tagline[lang]}
+  </p>
+
+  <div class="mt-auto pt-6">
+    <div class="flex items-center justify-between gap-3 border-t border-line pt-3">
+      {
+        component.artifact ? (
+          <code class="mono truncate text-[11px] text-ink/80">{component.artifact}</code>
+        ) : (
+          <span class="mono text-[11px] text-muted">source-only</span>
+        )
+      }
+      {
+        component.artifact && (
+          <span class="card__action">
+            <CopyButton
+              value={component.artifact}
+              label={copy.common.copy}
+              copiedLabel={copy.common.copied}
+              variant="light"
+              icon={false}
+            />
+          </span>
+        )
+      }
+    </div>
+
+    <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted">
+      <span>v{component.version}</span>
+      {component.minSdk !== null && <span>minSdk {component.minSdk}</span>}
+      <span>{platformLabel}{extraPlatforms}</span>
+    </div>
+
+    <div class="mt-3 flex flex-wrap items-center gap-1.5">
+      {
+        component.categories.map((category) => (
+          <span class="tag">{copy.categories[category]}</span>
+        ))
+      }
+      {
+        component.demo === 'runnable' ? (
+          <span class="tag !border-status/30 !text-status">{copy.common.runnable}</span>
+        ) : (
+          <span class="tag">{copy.common.skillOnly}</span>
+        )
+      }
+    </div>
+  </div>
+</article>

@@ -1,0 +1,188 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import CopyButton from '@/components/CopyButton.astro';
+import Icon from '@/components/Icon.astro';
+import { getSkills } from '@/lib/skills';
+import { getComponent } from '@/data/registry';
+import { localizedHref } from '@/lib/routing';
+import { site } from '@/lib/site';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const copy = t(lang);
+const skills = getSkills();
+const installed = site.skillsInstall;
+---
+
+<BaseLayout
+  lang={lang}
+  title={copy.skills.title}
+  description={copy.skills.lead}
+  image="/og/default.png"
+>
+  <section class="border-b border-line">
+    <div class="grid-bg pointer-events-none absolute inset-x-0 top-16 -z-10 h-72 opacity-50"></div>
+    <div class="wrap grid gap-8 py-16 md:grid-cols-[1fr_auto] md:items-end md:py-20">
+      <div>
+        <p class="label">03 / {copy.nav.skills}</p>
+        <h1 class="display mt-4 text-[clamp(3rem,7vw,5.6rem)]">{copy.skills.title}</h1>
+        <p class="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">{copy.skills.lead}</p>
+      </div>
+      <div class="flex items-end gap-6 md:flex-col md:items-end md:gap-2">
+        <span class="display text-[4rem] leading-none">{String(skills.length).padStart(2, '0')}</span>
+        <span class="label pb-2">{copy.skills.included}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="border-b border-line bg-surface/50">
+    <div class="wrap grid gap-8 py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-16">
+      <div>
+        <p class="label">{copy.skills.installTitle}</p>
+        <div class="code-shell mt-4">
+          <div class="code-shell__bar">
+            <Icon name="terminal" size={12} />
+            bash
+            <span class="ml-auto normal-case tracking-normal">one command</span>
+          </div>
+          <div class="flex items-center justify-between gap-3 p-4">
+            <code class="mono truncate text-[12px] text-code-ink">$ {installed}</code>
+            <CopyButton
+              value={installed}
+              label={copy.components.detail.copyCommand}
+              copiedLabel={copy.common.copied}
+            />
+          </div>
+        </div>
+        <p class="mt-3 text-[12px] leading-relaxed text-muted">{copy.skills.cliNote}</p>
+      </div>
+
+      <div class="border border-line bg-surface p-5 md:p-6">
+        <p class="label">{copy.skills.manualTab}</p>
+        <p class="mt-2 text-[13px] leading-relaxed text-muted">{copy.skills.manualNote}</p>
+        <div class="mt-5 flex flex-wrap gap-2">
+          <span class="tag">SKILL.md</span>
+          <span class="tag">YAML frontmatter</span>
+          <span class="tag">English</span>
+        </div>
+        <div class="mt-5 border-t border-line pt-4">
+          <p class="flex items-center gap-2 text-[11px] text-muted">
+            <span class="dot"></span>
+            {copy.skills.spec}
+          </p>
+          <p class="mt-2 text-[11.5px] leading-relaxed text-muted">{copy.skills.supportedAgents}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap py-16 md:py-20">
+    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {
+        skills.map((skill, index) => {
+          const displayName =
+            skill.slug === 'android-kit'
+              ? 'xechoz/android-kit'
+              : (getComponent(skill.slug)?.name ?? skill.name);
+
+          return (
+            <article
+              class="card group flex min-h-[250px] flex-col p-5 md:p-6"
+              style={`transition-delay: ${Math.min(index * 45, 250)}ms`}
+            >
+              <a
+                href={localizedHref(`/skills/${skill.slug}/`, lang)}
+                class="card__link"
+                aria-label={displayName}
+              />
+              <div class="flex items-center justify-between gap-4">
+                <span class="part-no">
+                  {skill.slug === 'android-kit' ? copy.skills.umbrella : skill.slug}
+                </span>
+                <span class="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.06em] text-status">
+                  <span class="dot"></span>
+                  {copy.skills.verified}
+                </span>
+              </div>
+
+              <h2 class="mt-5 flex items-start justify-between gap-3 text-[1.3rem] font-semibold leading-tight tracking-[-0.02em]">
+                {displayName}
+                <Icon
+                  name="arrow-up-right"
+                  size={16}
+                  class="mt-1 shrink-0 text-muted transition-colors group-hover:text-accent"
+                />
+              </h2>
+
+              <p class="mt-2 line-clamp-4 text-[12.5px] leading-relaxed text-muted">
+                {skill.description}
+              </p>
+
+              <div class="mt-auto flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 font-mono text-[10px] uppercase tracking-[0.06em] text-muted">
+                {skill.metadata.artifact && <span class="truncate">{skill.metadata.artifact}</span>}
+                {skill.metadata.version && <span>v{skill.metadata.version}</span>}
+                {skill.metadata.minSdk && <span>minSdk {skill.metadata.minSdk}</span>}
+              </div>
+            </article>
+          );
+        })
+      }
+    </div>
+
+    <p class="mt-6 font-mono text-[10px] uppercase tracking-[0.06em] text-muted">
+      {copy.skills.englishOnly}
+    </p>
+  </section>
+
+  <section class="border-y border-line bg-surface/40">
+    <div class="wrap grid gap-12 py-16 md:py-20 lg:grid-cols-[1fr_1fr]">
+      <div>
+        <p class="label">04 / Workflow</p>
+        <h2 class="display mt-3 text-[clamp(2rem,4vw,3.2rem)]">{copy.skills.howTitle}</h2>
+        <p class="mt-4 max-w-lg text-[14px] leading-relaxed text-muted">{copy.skills.howLead}</p>
+
+        <div class="mt-8 space-y-5">
+          <div class="grid grid-cols-[2rem_1fr] gap-3">
+            <span class="part-no">01</span>
+            <div>
+              <h3 class="text-sm font-semibold">{copy.home.skillsStep1Title}</h3>
+              <p class="mt-1 text-[12.5px] leading-relaxed text-muted">{copy.home.skillsStep1Body}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-[2rem_1fr] gap-3">
+            <span class="part-no">02</span>
+            <div>
+              <h3 class="text-sm font-semibold">{copy.home.skillsStep2Title}</h3>
+              <p class="mt-1 text-[12.5px] leading-relaxed text-muted">{copy.home.skillsStep2Body}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-[2rem_1fr] gap-3">
+            <span class="part-no">03</span>
+            <div>
+              <h3 class="text-sm font-semibold">{copy.home.skillsStep3Title}</h3>
+              <p class="mt-1 text-[12.5px] leading-relaxed text-muted">{copy.home.skillsStep3Body}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid gap-4 self-start">
+        <div class="border border-line bg-surface p-6">
+          <p class="label">{copy.skills.whyTitle}</p>
+          <p class="mt-3 text-[14px] leading-relaxed text-muted">{copy.skills.whyBody}</p>
+        </div>
+        <div class="border border-line bg-surface-2/50 p-6">
+          <p class="label">{copy.skills.verifiedTitle}</p>
+          <p class="mt-3 text-[14px] leading-relaxed text-muted">{copy.skills.verifiedLead}</p>
+          <p class="mt-3 border-t border-line pt-3 text-[12px] leading-relaxed text-muted">
+            {copy.skills.versionMismatch}
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

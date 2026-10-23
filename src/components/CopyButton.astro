@@ -1,0 +1,23 @@
+---
+interface Props {
+  value: string;
+  label: string;
+  copiedLabel: string;
+  variant?: 'dark' | 'light';
+  icon?: boolean;
+}
+
+const { value, label, copiedLabel, variant = 'dark', icon = true } = Astro.props;
+import Icon from '@/components/Icon.astro';
+---
+
+<button
+  type="button"
+  class:list={['copy-btn', variant === 'light' && 'copy-btn--light']}
+  data-copy={value}
+  data-copied-label={copiedLabel}
+  aria-label={label}
+>
+  {icon && <Icon name="copy" size={12} />}
+  <span data-copy-label>{label}</span>
+</button>

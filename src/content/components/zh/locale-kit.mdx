@@ -1,0 +1,190 @@
+---
+locale: zh
+title: LocaleKit
+---
+
+LocaleKit 解决两件事：**切换本应用语言**、**查看系统语言并跳转设置**。它基于 `AppCompatDelegate` 的官方 per-app language API，不修改系统语言，也不依赖 Shizuku 或 Root。
+
+## 适合什么场景
+
+- 应用内提供「跟随系统 / 简体中文 / English」这样的语言选择器。
+- 希望 Android 13+ 的系统「应用语言」设置里出现你的 App，并与应用内选择保持一致。
+- 需要读取当前系统语言，或跳转到系统语言设置页。
+- 需要在 Android 13+ 打开其他 App 的语言设置页。
+
+如果你只需要读取 `Locale.getDefault()`，不需要这个库。
+
+## 安装
+
+```kotlin
+dependencies {
+    implementation("io.github.xechoz:locale:1.0.0")
+}
+```
+
+版本目录写法：
+
+```toml
+[versions]
+localeKit = "1.0.0"
+
+[libraries]
+locale-kit = { module = "io.github.xechoz:locale", version.ref = "localeKit" }
+```
+
+```kotlin
+dependencies {
+    implementation(libs.locale.kit)
+}
+```
+
+库只依赖 `appcompat`，没有其他第三方依赖。minSdk 24，`compileSdk` 跟随宿主工程。
+
+## 声明支持的语言
+
+`app/src/main/res/xml/locales_config.xml`：
+
+```xml
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="zh-CN" />
+    <locale android:name="en" />
+</locale-config>
+```
+
+在 `AndroidManifest.xml` 的 `<application>` 上引用：
+
+```xml
+<application
+    android:localeConfig="@xml/locales_config"
+    ...>
+```
+
+没有 `localeConfig` 时，`AppLanguage.available()` 返回空列表，Android 13+ 的系统「应用语言」列表也不会出现你的 App。
+
+## 宿主 Activity 约束
+
+宿主 Activity 必须继承 `AppCompatActivity`：
+
+```kotlin
+class MainActivity : AppCompatActivity()
+```
+
+这是 `AppCompatDelegate` 官方 API 的要求。Compose 项目也可以继续用 `AppCompatActivity` + `setContent`。
+
+库的 manifest 会合并一个 `AppLocalesMetadataHolderService`（`autoStoreLocales=true`），为 Android 12 及以下提供自动持久化。**不需要写任何初始化代码。**
+
+## API
+
+```kotlin
+sealed interface AppLanguagePreference {
+    data object FollowSystem : AppLanguagePreference
+    data class Explicit(val locale: Locale) : AppLanguagePreference
+}
+
+object AppLanguage {
+    fun current(): AppLanguagePreference
+    fun set(preference: AppLanguagePreference)      // 主线程
+    fun available(context: Context): List<LanguageOption>
+}
+
+object SystemLanguage {
+    fun current(context: Context): List<Locale>      // 首个为主语言
+    fun displayName(locale: Locale): String
+    fun openSettings(context: Context): Boolean
+}
+
+object AppLocaleSettings {
+    val isSupported: Boolean                         // Android 13+
+    fun open(context: Context, packageName: String): Boolean
+}
+
+object CommonLocales {
+    val all: List<Locale>
+}
+```
+
+`LanguageOption` 是 `data class LanguageOption(val locale: Locale, val label: String)`，`label` 已按当前 App 语言渲染好。
+
+## Compose 示例
+
+```kotlin
+@Composable
+fun LanguagePicker() {
+    val context = LocalContext.current
+    val options = remember { AppLanguage.available(context) }
+
+    Column(Modifier.padding(16.dp)) {
+        options.forEach { option ->
+            TextButton(
+                onClick = {
+                    AppLanguage.set(AppLanguagePreference.Explicit(option.locale))
+                },
+            ) {
+                Text(option.label)
+            }
+        }
+        TextButton(
+            onClick = { AppLanguage.set(AppLanguagePreference.FollowSystem) },
+        ) {
+            Text("Follow system")
+        }
+    }
+}
+```
+
+`set()` 会触发 Activity 重建（Android 12 及以下明确如此；13+ 由系统应用语言机制处理）。不要在主线程之外调用。
+
+## View 示例
+
+```kotlin
+val english = Button(this).apply {
+    text = "English"
+    setOnClickListener {
+        AppLanguage.set(AppLanguagePreference.Explicit(Locale.ENGLISH))
+    }
+}
+
+val followSystem = Button(this).apply {
+    text = "Follow system"
+    setOnClickListener {
+        AppLanguage.set(AppLanguagePreference.FollowSystem)
+    }
+}
+```
+
+## 行为差异
+
+| 能力 | Android 13+ | Android 7.0–12 |
+| --- | --- | --- |
+| 本应用语言（跟随 / 指定） | 写入系统「应用语言」设置 | AppCompat 自动持久化 |
+| 系统语言（只读 + 跳转） | 支持 | 支持 |
+| 其他 App 的语言入口 | 深链系统页面 | 回退到应用详情页 |
+
+`SystemLanguage` 不提供程序化修改系统语言。非 root 设备没有可靠的公开 API，本库明确不做这件事。
+
+## 常见坑
+
+- **Activity 不是 AppCompatActivity**：`AppCompatDelegate` 不会生效，切换语言没有反应。
+- **忘记 `localeConfig`**：语言选择器为空，Android 13+ 系统设置里也找不到你的 App。
+- **在子线程调用 `set()`**：必须回到主线程。
+- **以为能改系统语言**：`SystemLanguage` 只读；修改系统语言需要跳转设置页。
+- **在 Compose 里直接读 `current()` 并期待自动重组**：语言切换通常伴随 Activity 重建；如果要做即时 UI 反馈，自己维护一份选择状态。
+- **locale 标签不规范**：使用 BCP 47 标签，例如 `zh-CN`、`en`、`pt-BR`。`CommonLocales.all` 可以作为默认数据源。
+
+## 验证
+
+```bash
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+手动检查：
+
+1. 打开语言选择器，切到 English，界面文案变化。
+2. 杀掉进程再启动，选择仍然保留。
+3. Android 13+：系统设置 → 应用 → 你的 App → 语言，能看到并修改。
+4. 点「系统语言」入口，能打开系统语言设置页。
+
+## 许可证
+
+Apache-2.0。源码：[xechoz/LocaleKit](https://github.com/xechoz/LocaleKit)。

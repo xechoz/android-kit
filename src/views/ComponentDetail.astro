@@ -1,0 +1,217 @@
+---
+import { getEntry, render } from 'astro:content';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import CopyButton from '@/components/CopyButton.astro';
+import Icon from '@/components/Icon.astro';
+import StatusBadge from '@/components/StatusBadge.astro';
+import { components, getComponent } from '@/data/registry';
+import { localizedHref } from '@/lib/routing';
+import { siteUrl } from '@/lib/site';
+import { t, type Lang } from '@/i18n/ui';
+
+interface Props {
+  lang: Lang;
+  slug: string;
+}
+
+const { lang, slug } = Astro.props;
+const copy = t(lang);
+const component = getComponent(slug);
+
+if (!component) {
+  throw new Error(`Unknown component: ${slug}`);
+}
+
+const entry = await getEntry('components', `${lang}/${slug}`);
+if (!entry) {
+  throw new Error(`Missing ${lang} content for component: ${slug}`);
+}
+
+const { Content } = await render(entry);
+
+const artifact = component.artifact ? `${component.artifact}:${component.version}` : null;
+const gradleLine = artifact ? `implementation("${artifact}")` : null;
+const gradleDisplay = artifact ? `implementation(\n    "${artifact}"\n)` : null;
+const skillCommand = `npx skills add xechoz/android-kit`;
+const builderHref = localizedHref(`/builder/?c=${component.slug}`, lang);
+const skillHref = localizedHref(`/skills/${component.slug}/`, lang);
+
+const meta = [
+  { label: copy.common.version, value: component.version },
+  { label: copy.common.minSdk, value: String(component.minSdk) },
+  { label: copy.common.license, value: component.license },
+  {
+    label: copy.common.platforms,
+    value: component.platforms.map((platform) => copy.platforms[platform]).join(' / '),
+  },
+];
+
+const index = components.findIndex((item) => item.slug === component.slug);
+const next = components[(index + 1) % components.length];
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: component.name,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: component.platforms.join(', '),
+  description: component.summary[lang],
+  url: `${siteUrl}${localizedHref(`/components/${component.slug}/`, lang)}`,
+  codeRepository: component.repo,
+  license: component.license,
+  softwareVersion: component.version,
+};
+---
+
+<BaseLayout
+  lang={lang}
+  title={component.name}
+  description={component.summary[lang]}
+  image={`/og/${component.slug}-${lang}.png`}
+  jsonLd={jsonLd}
+>
+  <section class="border-b border-line">
+    <div class="wrap py-12 md:py-16">
+      <a
+        class="mono inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.08em] text-muted transition-colors hover:text-ink"
+        href={localizedHref('/components/', lang)}
+      >
+        <Icon name="arrow-right" size={12} class="rotate-180" />
+        {copy.common.backToComponents}
+      </a>
+
+      <div class="mt-8 grid gap-10 lg:grid-cols-[1fr_300px]">
+        <div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="part-no">{component.part}</span>
+            <StatusBadge status={component.status} lang={lang} />
+            <span class="tag">{copy.common[component.demo === 'runnable' ? 'runnable' : 'skillOnly']}</span>
+          </div>
+
+          <h1 class="display mt-5 text-[clamp(2.8rem,6vw,5rem)]">{component.name}</h1>
+          <p class="mt-3 max-w-2xl text-[17px] leading-relaxed text-ink/80">{component.tagline[lang]}</p>
+          <p class="mt-4 max-w-2xl text-[14px] leading-relaxed text-muted">{component.summary[lang]}</p>
+
+          <div class="mt-7 flex flex-wrap gap-3">
+            <a class="btn btn--primary" href={builderHref}>
+              {copy.common.addToBuilder}
+              <Icon name="code" size={13} />
+            </a>
+            <a class="btn btn--ghost" href={component.repo} target="_blank" rel="noreferrer noopener">
+              {copy.common.openGithub}
+              <Icon name="github" size={13} />
+            </a>
+          </div>
+        </div>
+
+        <aside class="border border-line bg-surface p-5">
+          <p class="label">{copy.components.detail.install}</p>
+          {
+            gradleLine ? (
+              <div class="mt-3">
+                <pre class="mono whitespace-pre-wrap text-[10px] leading-[1.8] text-ink">{gradleDisplay}</pre>
+                <div class="mt-3">
+                  <CopyButton
+                    value={gradleLine}
+                    label={copy.components.detail.copyCommand}
+                    copiedLabel={copy.common.copied}
+                    variant="light"
+                  />
+                </div>
+              </div>
+            ) : (
+              <p class="mt-3 text-[12.5px] leading-relaxed text-muted">
+                {copy.components.detail.sourceOnly}
+              </p>
+            )
+          }
+
+          <div class="mt-5 border-t border-line pt-4">
+            <p class="label">{copy.components.detail.agentSkill}</p>
+            <code class="mono mt-2 block text-[10.5px] leading-relaxed text-ink/80">{skillCommand}</code>
+            <a
+              class="mt-3 inline-flex items-center gap-1.5 text-[12px] text-accent hover:underline"
+              href={skillHref}
+            >
+              {copy.skills.viewSkill}
+              <Icon name="arrow-right" size={12} />
+            </a>
+          </div>
+        </aside>
+      </div>
+
+      <div class="mt-10 grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
+        {
+          meta.map((item) => (
+            <div class="bg-surface px-4 py-3">
+              <div class="label">{item.label}</div>
+              <div class="mono mt-1.5 text-[11px] text-ink">{item.value}</div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap grid gap-12 py-12 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-16 lg:py-16">
+    <article class="prose min-w-0">
+      <Content />
+    </article>
+
+    <aside class="space-y-4 lg:sticky lg:top-24 lg:self-start">
+      <div class="border border-line bg-surface p-5">
+        <p class="label">{copy.components.detail.metadata}</p>
+        <dl class="mt-3 space-y-2.5">
+          <div class="flex items-start justify-between gap-3">
+            <dt class="text-[11px] text-muted">{copy.common.artifact}</dt>
+            <dd class="mono max-w-[65%] break-all text-right text-[10px] text-ink">
+              {component.artifact ?? `github.com/${component.repo}`}
+            </dd>
+          </div>
+          {
+            meta.map((item) => (
+              <div class="flex items-start justify-between gap-3 border-t border-line/70 pt-2.5">
+                <dt class="text-[11px] text-muted">{item.label}</dt>
+                <dd class="mono text-right text-[10px] text-ink">{item.value}</dd>
+              </div>
+            ))
+          }
+        </dl>
+      </div>
+
+      <div class="border border-line bg-surface-2/50 p-5">
+        <p class="label">{copy.components.detail.agentSkill}</p>
+        <p class="mt-2 text-[12px] leading-relaxed text-muted">
+          {copy.components.detail.skillHint}
+        </p>
+        <a class="btn btn--ghost btn--sm mt-4 w-full justify-between" href={skillHref}>
+          {component.slug}/SKILL.md
+          <Icon name="arrow-right" size={12} />
+        </a>
+      </div>
+
+      <div class="border border-line p-5">
+        <p class="label">{copy.components.detail.builderHint}</p>
+        <a class="btn btn--primary btn--sm mt-3 w-full justify-between" href={builderHref}>
+          {copy.common.addToBuilder}
+          <Icon name="plus" size={12} />
+        </a>
+      </div>
+    </aside>
+  </div>
+
+  <section class="border-t border-line">
+    <div class="wrap grid gap-6 py-10 md:grid-cols-[1fr_auto] md:items-center">
+      <div>
+        <p class="label">{copy.components.detail.all}</p>
+        <a class="display mt-2 block text-[2rem] hover:text-accent" href={localizedHref(`/components/${next.slug}/`, lang)}>
+          {next.name}
+        </a>
+      </div>
+      <a class="btn btn--ghost btn--sm" href={localizedHref('/components/', lang)}>
+        {copy.common.backToComponents}
+        <Icon name="arrow-right" size={12} />
+      </a>
+    </div>
+  </section>
+</BaseLayout>
