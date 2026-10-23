@@ -74,7 +74,7 @@ const tree = `playground/
 
         <h1 class="display mt-6 text-[clamp(3.35rem,8.2vw,6.6rem)]">
           <span class="block">{copy.home.titleA}</span>
-          <span class="mt-1 block italic text-accent">{copy.home.titleB}</span>
+          <span class:list={['mt-1 block text-accent', lang === 'en' && 'italic']}>{copy.home.titleB}</span>
         </h1>
 
         <p class="mt-7 max-w-xl text-[16px] leading-relaxed text-muted">

@@ -15,7 +15,8 @@ const palette = {
   ink: '#17160F',
   muted: '#6E695B',
   line: '#D6CEBB',
-  accent: '#C8452B',
+  accent: '#7AA2F7',
+  accentText: '#3F6AA8',
 };
 
 const esc = (value) =>
@@ -37,7 +38,7 @@ function frame(inner) {
 
 const defaultInner = `
   <text x="64" y="300" font-family="Liberation Serif, serif" font-size="108" fill="${palette.ink}">Android parts,</text>
-  <text x="64" y="410" font-family="Liberation Serif, serif" font-size="108" fill="${palette.accent}">ready to wire.</text>
+  <text x="64" y="410" font-family="Liberation Serif, serif" font-size="108" fill="${palette.accentText}">ready to wire.</text>
   <text x="64" y="482" font-family="Liberation Sans, sans-serif" font-size="26" fill="${palette.muted}">Hand-picked libraries with agent-ready integration skills.</text>
   <line x1="64" y1="528" x2="${W - 64}" y2="528" stroke="${palette.line}"/>
   <text x="64" y="570" font-family="Liberation Mono, monospace" font-size="15" letter-spacing="1.5" fill="${palette.muted}">LOCALEKIT  ·  MVS  ·  LOGA  ·  SERVICECENTER  ·  OFFLINE WEB</text>

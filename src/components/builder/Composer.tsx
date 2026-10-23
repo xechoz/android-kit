@@ -22,8 +22,8 @@ const PACKAGE_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
 
 const statusDot: Record<BuilderComponent['status'], string> = {
   stable: 'bg-status',
-  beta: 'bg-accent',
-  experimental: 'bg-[#C98A2B]',
+  beta: 'bg-hover-fill',
+  experimental: 'bg-hover',
   'source-only': 'bg-muted',
 };
 
@@ -266,7 +266,7 @@ export default function Composer({
                 <span
                   class={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center border text-[10px] ${
                     active
-                      ? 'border-accent bg-accent text-bg'
+                      ? 'border-hover-fill bg-hover-fill text-[#10131c]'
                       : 'border-line-strong text-transparent'
                   }`}
                   aria-hidden="true"
@@ -359,7 +359,7 @@ export default function Composer({
           </button>
 
           {status === 'error' && error && (
-            <p class="mt-3 border border-accent/40 bg-accent-soft/40 px-3 py-2 text-[11px] leading-relaxed text-accent">
+            <p class="mt-3 border border-hover/40 bg-accent-soft/40 px-3 py-2 text-[11px] leading-relaxed text-hover">
               {error}
             </p>
           )}
@@ -450,7 +450,7 @@ export default function Composer({
             {skillsInstall}
           </code>
           <a
-            class="mt-2 inline-flex items-center gap-1 text-[10.5px] text-accent hover:underline"
+            class="mt-2 inline-flex items-center gap-1 text-[10.5px] text-hover hover:underline"
             href={repo}
             target="_blank"
             rel="noreferrer noopener"

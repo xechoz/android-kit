@@ -12,6 +12,8 @@
   --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-hover: var(--hover);
+  --color-hover-fill: var(--hover-fill);
   --color-status: var(--status);
   --color-code: var(--code);
   --color-code-ink: var(--code-ink);
@@ -30,8 +32,11 @@
   --muted: #6e695b;
   --line: #d6cebb;
   --line-strong: #b9ae96;
-  --accent: #c8452b;
-  --accent-soft: #efd8ce;
+  /* Omarchy Tokyo Night blue. Deepened for text on paper; fills use the bright accent. */
+  --accent: #3f6aa8;
+  --accent-soft: #dbe6f8;
+  --hover: #3f6aa8;
+  --hover-fill: #7aa2f7;
   --status: #1f7a4d;
   --code: #1b1a15;
   --code-ink: #efe9da;
@@ -48,8 +53,10 @@
   --muted: #a39b88;
   --line: #2f2c25;
   --line-strong: #4a463b;
-  --accent: #e26a4a;
-  --accent-soft: #3a241d;
+  --accent: #7aa2f7;
+  --accent-soft: #1d2a3d;
+  --hover: #7aa2f7;
+  --hover-fill: #7aa2f7;
   --status: #5fbf8a;
   --code: #0d0d0b;
   --code-ink: #efe9da;
@@ -88,12 +95,12 @@ body::before {
 }
 
 ::selection {
-  background: var(--accent);
-  color: #fff8ef;
+  background: var(--hover-fill);
+  color: #10131c;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--hover);
   outline-offset: 3px;
 }
 
@@ -167,8 +174,8 @@ a {
 }
 
 .dot--experimental {
-  background: #b7791f;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #b7791f 14%, transparent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .dot--source {
@@ -223,8 +230,8 @@ a {
 }
 
 .btn--primary:hover {
-  background: var(--accent);
-  color: #fff8ef;
+  background: var(--hover-fill);
+  color: #10131c;
 }
 
 .btn--ghost {
@@ -233,7 +240,8 @@ a {
 }
 
 .btn--ghost:hover {
-  border-color: var(--ink);
+  border-color: var(--hover);
+  color: var(--hover);
   background: var(--surface);
 }
 
@@ -263,13 +271,13 @@ a {
   right: -1px;
   top: -1px;
   height: 2px;
-  background: var(--accent);
+  background: var(--hover-fill);
   opacity: 0;
   transition: opacity 180ms ease;
 }
 
 .card:hover {
-  border-color: var(--line-strong);
+  border-color: color-mix(in srgb, var(--hover) 55%, var(--line));
   transform: translateY(-2px);
 }
 
@@ -362,7 +370,7 @@ pre.astro-code {
 }
 
 .prose a {
-  color: var(--accent);
+  color: var(--hover);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
@@ -516,7 +524,10 @@ pre.astro-code {
   transition: color 160ms ease;
 }
 
-.nav-link:hover,
+.nav-link:hover {
+  color: var(--hover);
+}
+
 .nav-link[aria-current="page"] {
   color: var(--ink);
 }
@@ -528,7 +539,7 @@ pre.astro-code {
   right: 0;
   bottom: -20px;
   height: 1px;
-  background: var(--accent);
+  background: var(--hover-fill);
 }
 
 .icon-btn {
@@ -547,8 +558,8 @@ pre.astro-code {
 }
 
 .icon-btn:hover {
-  color: var(--ink);
-  border-color: var(--ink);
+  color: var(--hover);
+  border-color: var(--hover);
   background: var(--surface);
 }
 
@@ -565,7 +576,7 @@ pre.astro-code {
 }
 
 .copy-btn:hover {
-  color: var(--code-ink);
+  color: var(--hover-fill);
 }
 
 .copy-btn--light {
@@ -573,7 +584,7 @@ pre.astro-code {
 }
 
 .copy-btn--light:hover {
-  color: var(--ink);
+  color: var(--hover);
 }
 
 .mono {
@@ -620,8 +631,9 @@ pre.astro-code {
 }
 
 .filter-chip:hover {
-  color: var(--color-ink);
-  border-color: var(--color-line-strong);
+  color: var(--hover);
+  border-color: var(--hover);
+  background: color-mix(in srgb, var(--hover-fill) 8%, transparent);
 }
 
 .filter-chip.is-active {

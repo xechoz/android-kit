@@ -85,7 +85,7 @@ function isActive(path: string) {
             nav.map((item) => (
               <a
                 href={localizedHref(item.path, lang)}
-                class="block px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+                class="block px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.08em] text-muted transition-colors hover:bg-surface-2 hover:text-hover"
                 aria-current={isActive(item.path) ? 'page' : undefined}
               >
                 {item.label}
